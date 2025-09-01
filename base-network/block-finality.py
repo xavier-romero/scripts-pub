@@ -30,14 +30,20 @@ def rpc_call(url, methods, params=[None], timeout=10):
     data = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
-        out = json.loads(resp.read().decode())
+        try:
+            out = json.loads(resp.read().decode())
+        except Exception as e:
+            print(f"Failed to process/parse JSON-RPC response: {e}")
+            return False
     if "error" in out:
-        raise RuntimeError(out["error"])
+        print(f"Error in result: {out['error']}")
+        return False
     
     blocks = []
     for block in out:
         if "error" in block:
-            raise RuntimeError(block["error"])
+            print(f"Error in result: {block['error']}")
+            return False
 
         blocks.append(to_int(block.get("result").get("number")) if block and block.get("result") else None)
 
@@ -47,7 +53,13 @@ def rpc_call(url, methods, params=[None], timeout=10):
 def get_block_numbers(url):
     methods = ["eth_getBlockByNumber", "eth_getBlockByNumber", "eth_getBlockByNumber"]
     params = [["latest", False], ["safe", False], ["finalized", False]]
-    return rpc_call(url, methods, params)
+    blocks = rpc_call(url, methods, params)
+    if blocks:
+        return blocks
+    else:
+        print("Retrying...")
+        time.sleep(2)
+        return get_block_numbers(url)  # retry on failure
 
 def print_header():
     header = (
@@ -60,12 +72,26 @@ def print_header():
     print(header)
     print("-" * len(header))
 
+def create_plot(latest_list, safe_list, finalized_list, interval, plot_file):
+    plt.figure(figsize=(16, 9))
+    plt.plot(latest_list, label="latest block", color="red")
+    plt.plot(safe_list, label="safe block", color="blue")
+    plt.plot(finalized_list, label="final block", color="green")
+    plt.xlabel(f"Sample ({int(interval)}s interval)")
+    plt.ylabel("Block Number")
+    plt.title("Base L2 Sync: Latest / Safe / Final Blocks")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(plot_file, dpi=200)
+    print(f"Plot saved to {plot_file}")
+
 def main():
     ap = argparse.ArgumentParser(description="ASCII table of Base L2 heads with deltas and AGE")
     ap.add_argument("--rpc-url", help="Base RPC URL")
     ap.add_argument("--interval", type=float, default=2.0, help="Polling interval (sec)")
     ap.add_argument("--header-freq", type=int, default=50, help="Number of rows between header prints")
-    ap.add_argument("--plot-file", default="base_heads_plot.png", help="Output image file for the plot")
+    ap.add_argument("--plot-file", default=f"{sys.argv[0]}.png", help="Output image file for the plot")
     args = ap.parse_args()
 
     start_time = time.time()
@@ -124,26 +150,15 @@ def main():
 
             row_count += 1
             if row_count % args.header_freq == 0:
+                create_plot(latest_list, safe_list, finalized_list, args.interval, args.plot_file)
                 print_header()
                 row_count = 0
 
             time.sleep(args.interval)
 
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, Exception):
         print("\nBye. Generating plot...")
-
-        plt.figure(figsize=(10, 6))
-        plt.plot(latest_list, label="latest block", color="red")
-        plt.plot(safe_list, label="safe block", color="blue")
-        plt.plot(finalized_list, label="final block", color="green")
-        plt.xlabel(f"Sample ({int(args.interval)}s interval)")
-        plt.ylabel("Block Number")
-        plt.title("Base L2 Sync: Unsafe / Safe / Final Blocks")
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
-        plt.savefig(args.plot_file)
-        print(f"Plot saved to {args.plot_file}")
+        create_plot(latest_list, safe_list, finalized_list, args.interval, args.plot_file)
 
 if __name__ == "__main__":
     main()
