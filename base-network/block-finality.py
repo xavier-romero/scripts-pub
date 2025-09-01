@@ -113,7 +113,6 @@ def main():
             # highlight row in red + stop if any change < 0
             if any(c is not None and c < 0 for c in (f_change, s_change, l_change, lag_safe, lag_final)):
                 print(RED + row + RESET)
-                raise KeyboardInterrupt
             else:
                 print(row)
 
