@@ -14,18 +14,23 @@ RESET = "\033[0m"
 def to_int(hex_qty):
     return int(hex_qty, 16) if hex_qty else None
 
-def rpc_call(url, methods, params=[None], timeout=10):
-    assert len(methods) == len(params)
-
-    payload = []
-
-    for i in range(len(methods)):
-        method = methods[i]
-        _params = params[i]
-        if _params is None:
-            _params = []
-        _payload = {"jsonrpc": "2.0", "id": i, "method": method, "params": _params}
-        payload.append(_payload)
+def rpc_call(url, methods, params, timeout=10):
+    if isinstance(methods, str):
+        method = methods
+        _params = params if params is not None else []
+        payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": _params}
+    else:
+        assert isinstance(methods, list)
+        assert isinstance(params, list)
+        assert len(methods) == len(params)
+        payload = []
+        for i in range(len(methods)):
+            method = methods[i]
+            _params = params[i]
+            if _params is None:
+                _params = []
+            _payload = {"jsonrpc": "2.0", "id": i, "method": method, "params": _params}
+            payload.append(_payload)
 
     data = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
@@ -50,7 +55,18 @@ def rpc_call(url, methods, params=[None], timeout=10):
     return blocks
 
 
-def get_block_numbers(url):
+def get_block_numbers(url, batched=True):
+    if not batched:
+        latest = rpc_call(url, "eth_getBlockByNumber", ["latest", False])
+        safe = rpc_call(url, "eth_getBlockByNumber", ["safe", False])
+        finalized = rpc_call(url, "eth_getBlockByNumber", ["finalized", False])
+        if latest and safe and finalized:
+            return (latest, safe, finalized)
+        else:
+            print("Retrying...")
+            time.sleep(2)
+            return get_block_numbers(url, batched)
+
     methods = ["eth_getBlockByNumber", "eth_getBlockByNumber", "eth_getBlockByNumber"]
     params = [["latest", False], ["safe", False], ["finalized", False]]
     blocks = rpc_call(url, methods, params)
@@ -59,7 +75,7 @@ def get_block_numbers(url):
     else:
         print("Retrying...")
         time.sleep(2)
-        return get_block_numbers(url)  # retry on failure
+        return get_block_numbers(url, batched)  # retry on failure
 
 def print_header():
     header = (
@@ -113,7 +129,7 @@ def main():
             age = int(now - start_time)
             ts = time.strftime("%Y-%m-%d %H:%M:%S")
 
-            (latest, safe, finalized) = get_block_numbers(args.rpc_url)
+            (latest, safe, finalized) = get_block_numbers(args.rpc_url, batched=True)
 
             latest_list.append(latest)
             safe_list.append(safe)
@@ -156,7 +172,9 @@ def main():
 
             time.sleep(args.interval)
 
-    except (KeyboardInterrupt, Exception):
+    except (KeyboardInterrupt, Exception) as e:
+        if e is not KeyboardInterrupt:
+            raise
         print("\nBye. Generating plot...")
         create_plot(latest_list, safe_list, finalized_list, args.interval, args.plot_file)
 
