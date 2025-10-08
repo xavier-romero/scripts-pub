@@ -1,6 +1,6 @@
 # Persistent Directory issue PoC
 
-## Deploy enclave, it should run OK.
+## Deploy enclave, it should run OK.
 
 ```
 kurtosis run --enclave persistent-directory-issue .
@@ -11,7 +11,7 @@ You can check the folder is there inside the service and also through docker com
 ![before.png](before.png)
 
 
-## Update image from 1.28 to 1.29
+## Update image from 1.28 to 1.29
 
 ```
 kurtosis service update --image nginx:1.29 persistent-directory-issue nginx
